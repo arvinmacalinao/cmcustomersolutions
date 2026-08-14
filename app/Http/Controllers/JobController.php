@@ -1,0 +1,746 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+
+use App\Http\Requests;
+use App\Http\Requests\JobRequest;
+use App\Http\Controllers\Controller;
+
+use Auth;
+use DB;
+use PDF;
+use Carbon\Carbon;
+use Image;
+use File;
+
+use App\Http\Utilities\GlobalConstant;
+
+use App\Job;
+use App\SpecialCase;
+use App\User;
+use App\JobTechnical;
+use App\JobLevel;
+use App\JobStatus;
+use App\JobStorage;
+use App\JobLog;
+use App\Complaint;
+use App\DeviceInventory;
+use App\DeviceRegistration;
+use App\Warehouse;
+use App\Company;
+
+class JobController extends Controller
+{
+    /**
+     * Display a listing of the resource.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function index(Request $request)
+    {
+        $this->authorize('job_mgmt');
+
+        $expired_date = Carbon::now('Asia/Manila')->subDays(30)->toDateString();
+
+        $limit = $request->input('limit') ? : 50;
+        $status = trim($request->input('status'));
+        $imei = trim($request->input('imei'));
+        $code = trim($request->input('code'));
+        $warranty_status = trim($request->input('warranty_status'));
+        $job_status_id = trim($request->input('job_status_id'));
+        $date_from = trim($request->input('date_from'));
+        $date_to = trim($request->input('date_to'));
+        $job_level_id = trim($request->input('job_level_id'));
+        $company_id = trim($request->input('company_id'));
+        $job_id = trim($request->input('job_id'));
+
+        if( Auth::user()->company_id == 1 ) {
+            // User from HQ
+            $job_statuses = JobStatus::where('flag', true)
+                                    ->whereBetween('id', [12, 32])
+                                    ->orWhereIn('id', [1,2])
+                                    ->lists('name', 'id');
+        } else {
+            $job_statuses = JobStatus::where('flag', true)
+                                    ->whereBetween('id', [1, 11])
+                                    ->orWhereIn('id', [29,30,31,32])
+                                    ->lists('name', 'id');
+        }
+
+        // Retrieve value to populate dropdown field
+        $job_levels = JobLevel::where('flag', true)->lists('name', 'id');
+        $companies = Company::where('flag', true)->orderBy('company_name', 'ASC')->lists('company_name', 'id');
+        $encoders = User::where('role_id', 10)->lists('name', 'id');
+        
+        $jobs = Job::with('creator', 'status')
+                        ->where(function ($query) use($status, $imei, $warranty_status, $job_status_id, $job_level_id, $date_from, $date_to, $company_id, $job_id, $expired_date) {
+                                    if ($status) {
+                                        if($status == 'new') {
+                                            $status_id = 1;
+                                            $query->where('job_status_id', $status_id)
+                                                ->where('created_at', '>=', $expired_date)
+                                                ->where(function($query) {
+                                                    if (Auth::user()->company_id == 1) {
+                                                        // retrieve HQ job list
+                                                        if ( Auth::user()->role->role_name != 'super_admin') {
+                                                            $query->where('company_id', Auth::user()->company_id)
+                                                                    ->orWhere(function($query) {
+                                                                        $query->where('job_level_id', 3)
+                                                                                ->where('job_status_id', '>=', 12);
+                                                                    });
+                                                        }
+                                                    } else {
+                                                        $query->where('company_id', Auth::user()->company_id);
+                                                    }
+                                                });
+                                        } elseif ($status == 'complete') {
+                                            $status_id = [29, 30];
+                                            $query->whereIn('job_status_id', $status_id)
+                                                ->where(function($query) {
+                                                    if (Auth::user()->company_id == 1) {
+                                                        // retrieve HQ job list
+                                                        if ( Auth::user()->role->role_name != 'super_admin') {
+                                                            $query->where('company_id', Auth::user()->company_id)
+                                                                    ->orWhere(function($query) {
+                                                                        $query->where('job_level_id', 3)
+                                                                            ->where('job_status_id', '>=', 12);
+                                                                    });
+                                                        }
+                                                    } else {
+                                                        $query->where('company_id', Auth::user()->company_id);
+                                                    }
+                                                });
+                                        } elseif ($status == 'expire') {
+                                            //expire
+                                            //$expired_date = Carbon::now()->subWeek(2);
+                                            $expired_date = Carbon::now()->subDays(30);
+                                            $query->where('created_at', '<', $expired_date)
+                                                ->whereNotBetween('job_status_id', [29, 32])
+                                                ->where(function($query) {
+                                                    if (Auth::user()->company_id == 1) {
+                                                        // retrieve HQ job list
+                                                        if ( Auth::user()->role->role_name != 'super_admin') {
+                                                            $query->where('company_id', Auth::user()->company_id)
+                                                                    ->orWhere(function($query) {
+                                                                        $query->where('job_level_id', 3)
+                                                                                ->where('job_status_id', '>=', 12);
+                                                                    });
+                                                        }
+                                                    } else {
+                                                        $query->where('company_id', Auth::user()->company_id);
+                                                    }
+                                                });
+                                        }
+                                    } else {
+                                        if (Auth::user()->company_id == 1) {
+                                            // retrieve HQ job list
+                                            if ( Auth::user()->role->role_name != 'super_admin') {
+                                                /*$query->where('company_id', Auth::user()->company_id)
+                                                        ->orWhere(function($query) {
+                                                            $query->where('job_level_id', 3)
+                                                                    ->where('job_status_id', '>=', 12);
+                                                        });*/
+                                                $query->where(function ($query) {
+                                                    $query->where('company_id', Auth::user()->company_id)
+                                                          ->orWhere(function($query) {
+                                                            $query->where('job_level_id', 3)
+                                                                    ->where('job_status_id', '>=', 12);
+                                                        });
+                                                });
+                                            }
+                                        } else {
+                                            $query->where('company_id', Auth::user()->company_id);
+                                        }
+                                    }
+
+                                    if( $job_id ) {
+                                        $query->where('id', $job_id);
+                                    }
+
+                                    if( $imei ) {
+                                        $query->where('imei', 'like', '%'.$imei.'%');
+                                    }
+
+                                    if ($warranty_status) {
+                                        $query->where('warranty', $warranty_status);
+                                    }
+
+                                    if( $job_status_id ) {
+                                        $query->where('job_status_id', $job_status_id);
+                                    }
+
+                                    if( $job_level_id ) {
+                                        $query->where('job_level_id', $job_level_id);
+                                    }
+
+                                    if ( $date_from ) {
+                                        $query->whereDate('created_at', '>=', $date_from);
+                                    }
+
+                                    if ( $date_to ) {
+                                        $query->whereDate('created_at', '<=', $date_to);
+                                    }
+
+                                    if ( $company_id ) {
+                                        $query->where('company_id', $company_id);
+                                    }
+                                })
+                        /*->whereHas('device', function ($query) use($warranty_status) {
+                                                if ($warranty_status) {
+                                                    $query->where('warranty_status', $warranty_status);
+                                                }
+                                            })*/
+                        ->whereHas('device.inventory.model', function ($query) use($code) {
+                                                if ($code) {
+                                                    $query->where('code', 'like', '%'.$code.'%');
+                                                }
+                                            })
+                        ->orderBy('id', 'desc')
+                        ->paginate($limit);
+                        //->toSql();
+        //dd($jobs);
+
+        return view('jobs.index', compact('jobs', 'job_statuses', 'job_levels', 'companies', 'encoders'));
+    }
+
+
+    /**
+     * Show the form for creating a new resource.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function create()
+    {
+        $this->authorize('job_mgmt');
+
+        $complaint_categories = Complaint::where('parent_id', 0)->where('flag', 1)->lists('name', 'id')->all();
+        $complaint_list = Complaint::where('parent_id', '<>', 0)->select('id', 'name', 'parent_id')->where('flag', 1)->orderBy('parent_id')->get();
+        $complaint_list = $complaint_list->groupBy('parent_id');
+        $job_levels = JobLevel::where('flag', true)->lists('name', 'id')->all();
+
+        // Alternative to groupBy, If use this, remove groupBy single line code & paste code below to the blade form.
+        //dd($complaint_list->where('parent_id', 1)->all());
+
+        return view('jobs.create', compact('complaint_categories', 'complaint_list', 'job_levels'));
+    }
+
+    /**
+     * Store a newly created resource in storage.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\Response
+     */
+    public function store(JobRequest $request)
+    {
+        $this->authorize('job_mgmt');
+
+        //dd($request->all());
+        $request['company_id'] = Auth::user()->company_id;
+        $request['job_status_id'] = 1;
+        $request['special_case'] = ($request['special_case'] ? true : false);
+
+        DB::beginTransaction();
+
+        //DB::transaction(function () use ($request) {        
+            $today = Carbon::now('Asia/Manila');
+            $expire_period = JobLevel::where('id', $request['job_level_id'])->pluck('period');
+            $expire_date = Carbon::now()->addDay($expire_period)->toDateString();
+
+            //dd($expire_period);
+            //dd($request->get('complaint_id'));
+
+            $warranty_status = DeviceRegistration::where('imei', $request->imei)->pluck('warranty_status');
+
+            // Check for job duplication
+            $job_exist = Job::where('imei', $request->imei)
+                            ->where('job_status_id', '<>', 32)
+                            ->first();
+
+            if( !empty($job_exist) ) {
+                flash(trans('cdu.err_job_duplicate', ['imei' => $request->imei]), 'warning');
+                DB::rollback();
+                return redirect()->route('job.index');
+            }
+            
+            //dd($request->img);
+            $job = Job::create([
+                                'job_type' => $request['job_type'], 
+                                'job_level_id' => $request['job_level_id'], 
+                                'case_category' => $request['case_category'], 
+                                'company_id' => $request['company_id'], 
+                                'imei' => $request['imei'], 
+                                'warranty' => $warranty_status,
+                                'contact_name' => $request['contact_name'], 
+                                'mobile_number' => $request['mobile_number'], 
+                                'telephone_number' => $request['telephone_number'], 
+                                'note' => $request['note'], 
+                                'job_status_id' => $request['job_status_id'],
+                                'special_case' => $request['special_case'],
+                                'expire_date' => $expire_date,
+                                'created_by' => $request->user()->id,
+                                ]);
+
+            // Set complaint made by Customer
+            $job->setComplaints($request['complaint_id']);
+
+            //dd($request->img);
+
+            if( $request['job_type'] == 2 ) {
+                $job->setAccessories($request->bom_id);
+            } else {
+                // Upload device image
+                $image_name = $this->storeDeviceImg($job->id, $request->img);
+                $job->update([
+                                'image' => $image_name
+                            ]);
+            }
+
+            // Special Case
+            if ( $request['company_id'] == 1 && $request['special_case'] ) {     
+                $job_status_id = 33;
+                
+                SpecialCase::create([
+                    'job_id' => $job->id, 
+                    'old_imei' => $request['imei'], 
+                    'created_by' => $request->user()->id,
+                ]);
+
+                $job->update(['job_status_id' => $job_status_id]);
+
+                /* Log Job */
+                $job_log_desc = trans('cdu.create_special_case', ['jobNo' => sprintf('JO%08d', $job->id), 
+                                                                'user' => Auth::user()->name, 
+                                                                'date' => $today]);
+                JobLog::setJobLog($job->id, $job_status_id, $job_log_desc, $request->user()->id, $request->ip());
+            }
+
+            /* Log Job */
+            $job_log_desc = trans('cdu.create_job', ['jobNo' => sprintf('JO%08d', $job->id), 
+                                                    'user' => Auth::user()->name, 
+                                                    'date' => $today]);
+            JobLog::setJobLog($job->id, $request['job_status_id'], $job_log_desc, $request->user()->id, $request->ip());
+        //});
+            
+        DB::commit();
+        
+        flash(trans('validation.create_success', ['attribute' => 'job']), 'success');
+
+        return redirect()->route('job.index');
+    }
+
+    /**
+     * Display the specified resource.
+     *
+     * @param  int  $id
+     * @return \Illuminate\Http\Response
+     */
+    public function show($id)
+    {
+        //
+    }
+
+    /**
+     * Show the form for editing the specified resource.
+     *
+     * @param  int  $id
+     * @return \Illuminate\Http\Response
+     */
+    public function edit($id)
+    {
+        //
+    }
+
+    /**
+     * Update the specified resource in storage.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @param  int  $id
+     * @return \Illuminate\Http\Response
+     */
+    public function update(Request $request, $id)
+    {
+        //
+    }
+
+    /**
+     * Remove the specified resource from storage.
+     *
+     * @param  int  $id
+     * @return \Illuminate\Http\Response
+     */
+    public function destroy($id)
+    {
+        //
+    }
+
+    /**
+     * Retrieve device information based on IMEI.
+     *
+     * @param  string  $imei
+     * @return DeviceInventory
+     */
+    public function getDeviceInfo(Request $request)
+    {
+        //$job_exist = Job::where('imei', $request->imei)->whereNotBetween('job_status_id', [29, 32])->get();
+        $job_exist = Job::where('imei', $request->imei)
+                        ->where('job_status_id', '<>', 32)
+                        ->first();
+
+        $device_status = DeviceRegistration::where('imei', $request->imei)
+                                            ->where('flag', true)
+                                            ->first();
+
+        //dd(empty($job_exist));
+
+        if ( $device_status == null ) {
+            $device['error'] = 'Device for IMEI ' . $request->imei . ' is not found.';
+        } elseif( !empty($job_exist) ) {
+            $device['error'] = 'A job order (' . sprintf('JO%08d', $job_exist->id) . ') has been created for IMEI ' . $job_exist->imei . '.';
+        } else {
+            $device = DeviceInventory::where('imei', $request->imei)->first();
+            $prev_job = DB::table('jobs')
+                                 ->select(DB::raw('count(*) as total'))
+                                 ->where('imei', $request->imei)
+                                 ->groupBy('imei')
+                                 ->first();
+
+                                 //dd($prev_job->total);
+            if( $prev_job ) {
+                $device['total'] = $prev_job->total;
+            } else {
+                $device['total'] = '-';
+            }
+        }
+
+        //dd($device);
+        
+        $html = view('jobs.deviceList')
+                ->with('device', $device)
+                ->render();
+
+        return $html;
+    }
+
+    /**
+     * Retrieve job information based on IMEI.
+     *
+     * @param  string  $imei
+     * @return html - job list
+     */
+    public function getJobInfo(Request $request)
+    {
+        $job = Job::where('imei', $request->imei)->orderBy('id', 'desc')->first();
+
+        $html = view('tickets.jobList')
+                ->with('job', $job)
+                ->render();
+
+        return $html;
+    }
+
+    /**
+     * Retrieve device information based on IMEI.
+     *
+     * @param  string  $imei
+     * @return html Device Image
+     */
+    public function getDeviceImg(Request $request)
+    {
+        $job_exist = Job::where('imei', $request->imei)
+                        ->where('job_status_id', '<>', 32)
+                        ->first();
+
+        $device_status = DeviceRegistration::where('imei', $request->imei)
+                                            ->where('flag', true)
+                                            ->first();
+        
+        // Ensure that no Job has been created for the IMEI currrently.
+        if( empty($job_exist) && !empty($device_status) ) {
+            $device = DeviceInventory::where('imei', $request->imei)->first();
+        } else {
+            $device['error'] = true;
+        }
+
+        $html = view('jobs.deviceImage')
+                ->with('device', $device)
+                ->render();
+
+        return $html;
+    }
+
+    /**
+     * Retrieve model accessories .
+     *
+     * @param  string  $imei
+     * @return html Model Accessories
+     */
+    protected function getModelAccessories(Request $request)
+    {
+        $this->authorize('job_mgmt');
+
+        $device_info = DeviceInventory::where('imei', $request->imei)->firstOrFail();
+        
+        $accessories = DB::table('bom_device_model')
+                            ->join('bom', 'bom_device_model.bom_id', '=', 'bom.id')
+                            ->select('bom.id', 'bom.name')
+                            ->where('category', 'Accessories')
+                            ->where('device_model_id', $device_info->device_model_id)
+                            ->get();
+        
+        $html = view('jobs.accessoryList')
+                ->with('accessories', $accessories)
+                ->render();
+
+        return $html;
+    }
+
+
+    /**
+     * Generate Acknowledgement Form.
+     *
+     * @param  int  $id
+     * @return \Illuminate\Http\Response
+     */
+    public function getAcknowledgementForm(Request $request)
+    {
+        $this->authorize('job_mgmt');
+        $job_id = $request->id;
+
+        $job = Job::where(function ($query) use($job_id) {
+                                    $query->where('id', $job_id);
+
+                                    if( Auth::user()->company_id <> 1 ) {
+                                        $query->where('company_id',  Auth::user()->company_id);
+                                    }
+                                })->firstOrFail();
+        $job['services'] = Job::where('imei', $job->imei)->count(); 
+
+        $pdf = PDF::loadView('forms.acknowledgement', compact('job'));
+        $pdf->setPaper('A4', 'potrait');
+        return $pdf->stream();
+    }
+
+
+    /**
+     * Generate JO Form.
+     *
+     * @param  int  $id
+     * @return \Illuminate\Http\Response
+     */
+    public function getJobOrderForm(Request $request)
+    {
+        $this->authorize('job_mgmt');
+        $job_id = $request->id;
+
+        $job = Job::where(function ($query) use($job_id) {
+                                    $query->where('id', $job_id);
+
+                                    if( Auth::user()->company_id <> 1 ) {
+                                        $query->where('company_id',  Auth::user()->company_id);
+                                    }
+                                })->firstOrFail();
+        $job['services'] = Job::where('imei', $job->imei)->count();
+        
+        return view('forms.jobOrder')
+                ->with('job', $job)
+                ->render();
+        // $pdf = PDF::loadView('forms.jobOrder', compact('job'));
+        // $pdf->setPaper('A4', 'potrait');
+        // return $pdf->stream();
+    }
+
+
+    /**
+     * Generate Tech Job Report List.test
+     *
+     * @param  int  $id
+     * @return \Illuminate\Http\Response
+     */
+    public function getTechnicalList($id)
+    {
+        $this->authorize('job_mgmt');
+        
+        $reports = JobTechnical::where(function ($query) use($id) {
+                                            $query->where('job_id', $id);
+                                            $query->whereIn('status', ['complete', 'pull_out']);
+                                        })->get();
+
+        return view('jobs.techReportIndex', compact('reports'));
+    }
+
+
+    protected function setJobLog(Job $job, $type)
+    {
+        $today = Carbon::now('Asia/Manila');
+
+        $description = trans('cdu.create_job', ['jobNo' => sprintf('JO%08d', $job->id), 'user' => $request->user()->id, 'date' => $today]);
+
+        JobLog::create(
+            [
+            'job_id' => $job->id,
+            'process_id' => GlobalConstant::getJobProcess()['create_job'],
+            'description' => $description,
+            'log_by' => $job->user()->id,
+            'ip_address' => $job->ip(),
+            ]);
+    }
+
+
+    protected function getJobLog(Request $request)
+    {
+        $this->authorize('job_mgmt');
+
+        $jobLogs = JobLog::with('logBy')->where('job_id', $request->id)->orderBy('id', 'desc')->get();
+
+        return view('jobs.log', compact('jobLogs'));
+    }
+
+
+    protected function cancelJob(Request $request)
+    {
+        $this->authorize('job_mgmt');
+
+        $today = Carbon::now('Asia/Manila');
+
+        Job::find($request->id)->update([
+                                    'job_status_id' => 31,
+                                    'updated_by' => Auth::id()
+                                ]);
+
+        JobTechnical::where('job_id', $request->id)
+                    ->whereNotIn('status', ['complete', 'cancel', 'pull_out'])
+                    ->update([
+                                'status' => 'pull_out',
+                                'updated_by' => Auth::id()
+                            ]);
+        
+        /* Log Job */
+        $job_log_desc = trans('cdu.cancel_job', ['jobNo' => sprintf('JO%08d', $request->id), 
+                                                'user' => Auth::user()->name, 
+                                                'date' => $today, 
+                                                'remark' => $request->remark]);
+        JobLog::setJobLog($request->id, 31, $job_log_desc, Auth::id(), $request->ip());
+
+        flash(trans('validation.cancel_job', ['job' => sprintf('JO%08d', $request->id)]), 'success');
+        
+        return redirect()->route('job.index');
+    }
+
+
+    protected function closeJob(Request $request)
+    {
+        $this->authorize('job_mgmt');
+
+        $job = Job::find($request->id);
+
+        if ($job->company_id == Auth::user()->company_id) {
+            DB::transaction(function () use ($request, $job) {
+                $today = Carbon::now('Asia/Manila');
+                $complete_status_id = array(29, 30, 31); // Completed or Cancelled
+                $warehouses = Warehouse::where('flag', true)->where('company_id', Auth::user()->company_id)->lists('id')->toArray();
+
+                // Only allow CSR to close Job with status that is completed.
+                if( in_array($job->job_status_id, $complete_status_id) ) {
+                    Job::find($request->id)->update([
+                                            'job_status_id' => 32,
+                                            'updated_by' => Auth::id()
+                                        ]);
+
+                    JobStorage::where('job_id', $request->id)
+                                ->where('status', true)
+                                ->whereIn('warehouse_id', $warehouses)
+                                ->update([
+                                            'status' => false,
+                                            'updated_by' => Auth::id()
+                                        ]);
+
+                    // Log Job
+                    $job_log_desc = trans('cdu.close_job', ['jobNo' => sprintf('JO%08d', $request->id), 
+                                                            'user' => Auth::user()->name, 
+                                                            'date' => $today,
+                                                            'remark' => $request->remark]);
+                    JobLog::setJobLog($request->id, 32, $job_log_desc, Auth::id(), $request->ip());
+                    
+                    flash(trans('validation.close_job', ['job' => sprintf('JO%08d', $request->id)]), 'success');
+                } elseif ( $job->job_status_id == 32 ) {
+                    flash(trans('validation.fail_close_job', ['job' => sprintf('JO%08d', $request->id), 'reason' => 'job is already closed']), 'danger');
+                } else {
+                    flash(trans('validation.fail_close_job', ['job' => sprintf('JO%08d', $request->id), 'reason' => 'job is still in incomplete']), 'danger');
+                }
+            });
+        } else {
+            flash(trans('validation.fail_close_job', ['job' => sprintf('JO%08d', $request->id), 'reason' => 'only employees from ' . $job->company->company_name . ' can close the job']), 'danger');
+        }
+
+        return redirect()->route('job.index');
+    }
+
+
+    // Retrieve list of jobs ready to be assign to warehouse personnels
+    public function getJobForStorage(Request $request) {
+        $this->authorize('store_inventory', 'super_admin', 'hq_admin');
+
+        //TODO: Able to update status during shipment out from HQ & close job
+
+        $limit = $request->input('limit') ? : 50;
+        $imei = trim($request->input('imei'));
+        $code = trim($request->input('code'));
+
+        //$warehouses = Warehouse::where('flag', true)->where('company_id', Auth::user()->company_id)->lists('id')->toArray();
+        $warehouses = Warehouse::where('flag', true)->where('company_id', Auth::user()->company_id)->lists('name', 'id');
+
+        $jobs = Job::where(function ($query) use($imei) {
+                                    if ( Auth::user()->company_id != 1 ) {
+                                        $query->where('company_id',  Auth::user()->company_id)
+                                            ->whereIn('job_status_id', [9,15]); // Branch QC approved, Accepted shipment from HQ.
+                                    } else {
+                                        $query->where('job_status_id', 23); // HQ QC approved.
+                                    }
+
+                                    if( $imei ) {
+                                        $query->where('imei', 'like', '%'.$imei.'%');
+                                    }
+                                })
+                    ->whereHas('device.inventory.model', 
+                                    function ($query) use($code) {
+                                        if ($code) {
+                                            $query->where('code', 'like', '%'.$code.'%');
+                                        }
+                                    })
+                    /*->whereHas('storage', 
+                                    function ($query) {
+                                        $query->where('status', '<>', true);
+                                    })*/
+                    ->whereDoesntHave('storage', 
+                                    function ($query) use($warehouses) {
+                                        $query->where('status', true)
+                                            ->whereIn('warehouse_id', array_keys($warehouses->all()));
+                                    })
+                    ->paginate($limit);
+                    
+        
+        //$warehouse_personnels = User::whereIn('role_id', [12, 13])->where('company_id', Auth::user()->company_id)->lists('name', 'id');
+        
+        return view('jobs.storage', compact('jobs', 'warehouses'));
+    }
+
+
+    /**
+     * This function receive applicant image & update the DB
+     *
+     * @param $request Applicant image
+     * @return json Returns upload status
+     */
+    public function storeDeviceImg($job_id, $raw_img)
+    {
+        $img_dir = public_path('images/job/'); // server path
+        File::exists($img_dir) or File::makeDirectory($img_dir);
+        $img_name = $job_id . '.png';
+
+        $img = Image::make(file_get_contents($raw_img))->save($img_dir.$img_name);
+        
+        return $img_name;
+    }
+}

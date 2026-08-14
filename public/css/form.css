@@ -1,0 +1,53 @@
+@import url(http://fonts.googleapis.com/css?family=Bree+Serif);
+@media print {
+  @page {
+    size: 330mm 427mm;
+    margin: 14mm; }
+  body {
+    width: 1200px; }
+  body, h1, h2, h3, h4, h5, h6 {
+    font-family: 'Bree Serif', serif; }
+  .container {
+    width: 1170px; } }
+
+div.form {
+  font-size: 1.2em; }
+
+div.bottom-align-text {
+  position: absolute;
+  bottom: 0;
+  right: 0; }
+
+div.company-logo img {
+  display: block; }
+
+div.form-label {
+  text-align: left; }
+
+div.form-result {
+  font-weight: bold;
+  text-align: left; }
+
+div.top-section {
+  border-top: 2px solid #ddd;
+  margin-top: 20px;
+  padding-top: 20px; }
+
+div.form-acknowledgement {
+  margin-top: 50px;
+  text-align: center; }
+
+div.form-acknowledgement p {
+  border-top: 2px solid #ccc; }
+
+div.form-footer {
+  margin-top: 60px;
+  margin-bottom: 20px;
+  border: 2px solid #ccc;
+  text-align: center; }
+
+.borderless tbody tr td {
+  border: none;
+}
+
+/*# sourceMappingURL=form.css.map */
