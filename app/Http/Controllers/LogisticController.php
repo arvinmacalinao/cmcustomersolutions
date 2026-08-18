@@ -102,14 +102,6 @@ class LogisticController extends Controller
     {
         $this->authorize('add_delivery_order');
 
-        if (!$request->has('jobs') || !is_array($request->jobs) || empty($request->jobs)) {
-            flash(trans('cdu.err_logistic_job_not_found', [
-                'jobNo' => sprintf('JO%08d', $job_id)
-            ]), 'danger');
-
-                return redirect()->route('logistic.create');
-            }
-
         $user_company_id = Auth::user()->company_id;
 
         if( $user_company_id == 1 ) {
