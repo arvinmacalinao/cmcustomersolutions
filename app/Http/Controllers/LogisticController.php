@@ -147,32 +147,10 @@ class LogisticController extends Controller
             $valid_job_status = array(31, 34); // Job Cancelled or Job Ready Shipment
 
             foreach ($request->jobs as $key => $job_id) {
-                    $job_details = Job::find($job_id);
+                $job_details = Job::find($job_id);
 
-                    if (!$job_details) {
-                        flash('Job Order ' . sprintf('JO%08d', $job_id) . ' does not exist.', 'danger');
-
-                        return redirect()->route('logistic.create');
-                    }
-
-                    // Check whether job status qualified for shipment
-                    if (!in_array($job_details->job_status_id, $valid_job_status)) {
-                        // existing code...
-                    }
-            }
-
-            foreach ($request->jobs as $key => $job_id) {
-                    $job_details = Job::find($job_id);
-
-                    // Check whether Job Order exists
-                    if (!$job_details) {
-                        flash('Job Order ' . sprintf('JO%08d', $job_id) . ' does not exist.', 'danger');
-
-                        return redirect()->route('logistic.create');
-                    }
-
-                    // Check whether job status qualified for shipment
-                    if (!in_array($job_details->job_status_id, $valid_job_status)) {
+                // Check whether job status qualified for shipment
+                if ( !in_array($job_details->job_status_id, $valid_job_status) ) {
                     flash(trans('cdu.err_logistic_job', ['jobNo' => sprintf('JO%08d', $job_id), 
                                                         'company' => $job_details->company->company_name]), 'danger');
 
@@ -194,13 +172,6 @@ class LogisticController extends Controller
             foreach ($request->jobs as $key => $job_id) {
                 // Verify job is redirected to the correct company
                 $job_details = Job::find($job_id);
-
-                // Check whether Job Order exists
-                if (!$job_details) {
-                    flash('Job Order ' . sprintf('JO%08d', $job_id) . ' does not exist.', 'danger');
-
-                    return redirect()->route('logistic.create');
-                }
 
                 // Check whether job status qualified for shipment
                 if ( !in_array($job_details->job_status_id, $valid_job_status) ) {
