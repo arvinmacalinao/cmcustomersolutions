@@ -7,6 +7,9 @@ use Excel;
 use Illuminate\Console\Command;
 use App\Http\Utilities\GlobalConstant;
 use Carbon\Carbon;
+use File;
+use App\Report;
+
 
 
 class MasterReportV2 extends Command
@@ -32,7 +35,30 @@ class MasterReportV2 extends Command
     public function handle()
     {
         ini_set('memory_limit', '4096M');
+        ini_set('max_execution_time', 0);
         // $this->info(ini_get('memory_limit'));
+
+        $today = Carbon::now('Asia/Manila');
+
+        $reportType = 'master_report';
+        $reportDir = public_path('reports/master_report/');
+        $reportFileName = 'master-report-' . $today->format('Ymd');
+        $reportName = 'Master Report at ' . $today->toFormattedDateString();
+        $creatorId = 1;
+        $reportStatus = true;
+
+        if (!is_dir($reportDir)) {
+            File::makeDirectory($reportDir, 0771, true, true);
+        }
+
+        $reportId = Report::logReport(
+            $reportName,
+            $reportType,
+            $reportDir,
+            $reportFileName,
+            $creatorId
+        );
+
         $rows = [];
 
         $jobTypes = GlobalConstant::getJobType();
@@ -359,13 +385,21 @@ class MasterReportV2 extends Command
 
             $this->info('Processed rows: ' . count($rows));
         });
-        $filename = 'master-report-' . date('Ymd-His');
+        $filename = $reportFileName;
 
         Excel::create($filename, function ($excel) use ($rows) {
             $excel->sheet('Master Report', function ($sheet) use ($rows) {
                 $sheet->fromArray($rows);
             });
         })->store('xlsx', public_path('reports/master_report'));
+
+        $this->info('Excel generated. Rows: ' . count($rows));
+
+        Report::updateReportStatus(
+            $reportId,
+            $reportStatus,
+            $creatorId
+        );
 
         $this->info('Excel generated. Rows: ' . count($rows));
 
